@@ -53,6 +53,26 @@ p {
   font-weight: 700;
 }
 
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.05);
+}
+
+.status-dot.loading {
+  background: #fbbf24;
+}
+
+.status-dot.ok {
+  background: #22c55e;
+}
+
+.status-dot.error {
+  background: #ef4444;
+}
+
 .meta {
   display: grid;
   gap: 6px;
@@ -65,4 +85,14 @@ code {
   padding: 4px 6px;
   border-radius: 6px;
   font-size: 12px;
+}
+
+.error {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecdd3;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  font-size: 14px;
 }
