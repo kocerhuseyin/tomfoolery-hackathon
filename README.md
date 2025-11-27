@@ -43,6 +43,13 @@ Backend: http://localhost:4000/api/health
   - `/api/scrape` (POST with `url`; returns title, description, OG meta, text preview, headings, links)
   - `/api/crawl` (POST with `url`, optional `maxPages`, `maxDepth`, `sameDomain`)
 
+## Mobile (mobile/ - Expo)
+
+- React Native (Expo) client to call the same backend.
+- Scripts: `npm start --prefix mobile` (or `android`/`ios`/`web`).
+- Env: set `EXPO_PUBLIC_API_URL` to your backend URL for device testing (see `mobile/.env.example`).
+- Entry: `src/App.tsx` with scraper and crawler forms.
+
 ## Notes
 
 - Shared `.gitignore` covers `node_modules` and build output.

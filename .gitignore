@@ -7,5 +7,9 @@ frontend/dist
 backend/dist
 .tsbuildinfo
 .env.*
+.expo
+mobile/.expo
+mobile/node_modules
+mobile/.env
 .DS_Store
 !.env.example
