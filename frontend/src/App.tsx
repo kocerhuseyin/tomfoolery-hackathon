@@ -182,7 +182,7 @@ function App() {
           <div className="card">
             <h2>Scrape a Page</h2>
             <p>Extract title, description, headings, and links from a single page.</p>
-            <form className="crawl-form" onSubmit={handleScrape}>
+            <form className="crawl-form" onSubmit={handleScrape} noValidate>
               <label className="field">
                 <span>URL</span>
                 <input
@@ -190,7 +190,6 @@ function App() {
                   placeholder="https://example.com"
                   value={scrapeUrl}
                   onChange={(e) => setScrapeUrl(e.target.value)}
-                  required
                 />
               </label>
               <button type="submit" disabled={scrapeLoading}>
@@ -271,7 +270,7 @@ function App() {
           <div className="card">
             <h2>Mini Crawler</h2>
             <p>Enter a URL to crawl. Limits keep it fast and polite.</p>
-            <form className="crawl-form" onSubmit={handleCrawl}>
+            <form className="crawl-form" onSubmit={handleCrawl} noValidate>
               <label className="field">
                 <span>Start URL</span>
                 <input
@@ -279,7 +278,6 @@ function App() {
                   placeholder="https://example.com"
                   value={crawlUrl}
                   onChange={(e) => setCrawlUrl(e.target.value)}
-                  required
                 />
               </label>
               <div className="field-grid">
