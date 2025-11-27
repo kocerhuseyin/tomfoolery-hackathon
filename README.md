@@ -16,6 +16,17 @@ npm --prefix frontend run dev
 Frontend: http://localhost:5173  
 Backend: http://localhost:4000/api/health
 
+## Docker
+
+Build and run both services:
+
+```bash
+docker compose up --build
+```
+
+Frontend: http://localhost:5173  
+Backend: http://localhost:4000/api/health
+
 ## Frontend (frontend/)
 
 - React 18 + Vite + TypeScript, no extra tooling.
