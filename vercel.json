@@ -4,5 +4,8 @@
     { "src": "frontend/package.json", "use": "@vercel/static-build" }
   ],
   "outputDirectory": "frontend/dist",
-  "framework": "vite"
+  "framework": "vite",
+  "routes": [
+    { "src": "/.*", "dest": "/index.html" }
+  ]
 }
