@@ -1,4 +1,4 @@
-import { PrismaClient, User } from '../prisma/generated/client';
+import { PrismaClient, User, PostCategory } from '../prisma/generated/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import axios from 'axios';
@@ -23,6 +23,7 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 const allowedOrigins = FRONTEND_ORIGIN.split(',').map((origin) => origin.trim());
+const ALLOWED_CATEGORIES: PostCategory[] = ['market', 'qa', 'discussion'];
 
 app.use(cors({
   origin: allowedOrigins,
@@ -68,6 +69,34 @@ type TumEvent = {
   date?: string;
   url?: string;
   image?: string;
+};
+
+type ForumPost = {
+  id: string;
+  title: string;
+  body: string;
+  category: PostCategory;
+  createdAt: Date;
+  author: {
+    id: string;
+    fullName: string;
+    email: string;
+    faculty: string | null;
+  };
+  commentsCount: number;
+};
+
+type ForumPostWithComments = ForumPost & {
+  comments: Array<{
+    id: string;
+    body: string;
+    createdAt: Date;
+    author: {
+      id: string;
+      fullName: string;
+      email: string;
+    };
+  }>;
 };
 
 function isHttpUrl(value: string) {
@@ -390,6 +419,180 @@ app.get('/me', authMiddleware, async (req: AuthenticatedRequest, res) => {
   } catch (err) {
     console.error('/me failed', err);
     return res.status(500).json({ error: 'Failed to load profile' });
+  }
+});
+
+app.get('/forum/posts', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  const category = typeof req.query.category === 'string' ? req.query.category : null;
+  const filterCategory = category && ALLOWED_CATEGORIES.includes(category as PostCategory) ? (category as PostCategory) : undefined;
+
+  try {
+    const posts = await prisma.post.findMany({
+      where: filterCategory ? { category: filterCategory } : undefined,
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      include: {
+        author: true,
+        _count: { select: { comments: true } },
+      },
+    });
+
+    const payload: ForumPost[] = posts.map((p) => ({
+      id: p.id,
+      title: p.title,
+      body: p.body,
+      category: p.category,
+      createdAt: p.createdAt,
+      author: {
+        id: p.authorId,
+        fullName: p.author.fullName,
+        email: p.author.email,
+        faculty: p.author.faculty,
+      },
+      commentsCount: p._count.comments,
+    }));
+
+    return res.json({ posts: payload });
+  } catch (err) {
+    console.error('Failed to list posts', err);
+    return res.status(500).json({ error: 'Failed to load posts' });
+  }
+});
+
+app.post('/forum/posts', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { title, body, category } = req.body ?? {};
+  if (!title || typeof title !== 'string' || title.trim().length < 3) {
+    return res.status(400).json({ error: 'Title must be at least 3 characters' });
+  }
+  if (!body || typeof body !== 'string' || body.trim().length < 3) {
+    return res.status(400).json({ error: 'Body must be at least 3 characters' });
+  }
+  if (!category || !ALLOWED_CATEGORIES.includes(category)) {
+    return res.status(400).json({ error: 'Invalid category' });
+  }
+
+  try {
+    const created = await prisma.post.create({
+      data: {
+        title: title.trim(),
+        body: body.trim(),
+        category,
+        authorId: req.user.id,
+      },
+      include: {
+        author: true,
+        _count: { select: { comments: true } },
+      },
+    });
+
+    const payload: ForumPost = {
+      id: created.id,
+      title: created.title,
+      body: created.body,
+      category: created.category,
+      createdAt: created.createdAt,
+      author: {
+        id: created.authorId,
+        fullName: created.author.fullName,
+        email: created.author.email,
+        faculty: created.author.faculty,
+      },
+      commentsCount: created._count.comments,
+    };
+
+    return res.status(201).json({ post: payload });
+  } catch (err) {
+    console.error('Failed to create post', err);
+    return res.status(500).json({ error: 'Failed to create post' });
+  }
+});
+
+app.get('/forum/posts/:id', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  const postId = req.params.id;
+  if (!postId) return res.status(400).json({ error: 'Missing post id' });
+
+  try {
+    const post = await prisma.post.findUnique({
+      where: { id: postId },
+      include: {
+        author: true,
+        comments: {
+          orderBy: { createdAt: 'asc' },
+          include: { author: true },
+        },
+        _count: { select: { comments: true } },
+      },
+    });
+
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    const payload: ForumPostWithComments = {
+      id: post.id,
+      title: post.title,
+      body: post.body,
+      category: post.category,
+      createdAt: post.createdAt,
+      author: {
+        id: post.authorId,
+        fullName: post.author.fullName,
+        email: post.author.email,
+        faculty: post.author.faculty,
+      },
+      commentsCount: post._count.comments,
+      comments: post.comments.map((c) => ({
+        id: c.id,
+        body: c.body,
+        createdAt: c.createdAt,
+        author: {
+          id: c.authorId,
+          fullName: c.author.fullName,
+          email: c.author.email,
+        },
+      })),
+    };
+
+    return res.json({ post: payload });
+  } catch (err) {
+    console.error('Failed to load post detail', err);
+    return res.status(500).json({ error: 'Failed to load post detail' });
+  }
+});
+
+app.post('/forum/posts/:id/comments', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  const postId = req.params.id;
+  const { body } = req.body ?? {};
+  if (!body || typeof body !== 'string' || body.trim().length < 1) {
+    return res.status(400).json({ error: 'Comment body is required' });
+  }
+
+  try {
+    const created = await prisma.comment.create({
+      data: {
+        body: body.trim(),
+        postId,
+        authorId: req.user.id,
+      },
+      include: { author: true, post: true },
+    });
+
+    return res.status(201).json({
+      comment: {
+        id: created.id,
+        body: created.body,
+        createdAt: created.createdAt,
+        author: {
+          id: created.authorId,
+          fullName: created.author.fullName,
+          email: created.author.email,
+        },
+      },
+    });
+  } catch (err) {
+    console.error('Failed to create comment', err);
+    return res.status(500).json({ error: 'Failed to create comment' });
   }
 });
 
