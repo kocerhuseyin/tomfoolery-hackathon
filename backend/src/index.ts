@@ -1,16 +1,26 @@
+import { PrismaClient, User } from './generated/prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { Pool } from 'pg';
 import axios from 'axios';
 import { load } from 'cheerio';
 import cors from 'cors';
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import { randomUUID } from 'node:crypto';
 import { URL } from 'node:url';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:5173';
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-super-secret-change-me';
+const DATABASE_URL = process.env.DATABASE_URL;
 const USER_AGENT = 'TomfooleryCrawler/1.0 (+https://example.com)';
+if (!DATABASE_URL) {
+  throw new Error('DATABASE_URL is required for Prisma');
+}
+
+const pool = new Pool({ connectionString: DATABASE_URL });
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
 
 const allowedOrigins = FRONTEND_ORIGIN.split(',').map((origin) => origin.trim());
 
@@ -19,19 +29,6 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json());
-
-type User = {
-  id: string;
-  tumId: string | null;
-  email: string;
-  fullName: string;
-  faculty: string | null;
-  semester?: number | null;
-  profileSlug: string;
-  authProvider: 'mock' | 'tum';
-  createdAt: Date;
-  updatedAt: Date;
-};
 
 type AuthenticatedRequest = express.Request & { user?: User };
 
@@ -42,8 +39,6 @@ declare global {
     }
   }
 }
-
-const users: User[] = [];
 
 type CrawlPage = {
   url: string;
@@ -107,7 +102,7 @@ function issueToken(user: User) {
   );
 }
 
-function authMiddleware(req: AuthenticatedRequest, res: express.Response, next: express.NextFunction) {
+const authMiddleware: express.RequestHandler = async (req: AuthenticatedRequest, res, next) => {
   const header = req.headers.authorization;
   const token = header?.startsWith('Bearer ') ? header.slice(7) : null;
 
@@ -117,7 +112,7 @@ function authMiddleware(req: AuthenticatedRequest, res: express.Response, next: 
 
   try {
     const payload = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload;
-    const user = users.find((u) => u.id === payload.sub);
+    const user = await prisma.user.findUnique({ where: { id: payload.sub as string } });
     if (!user) {
       return res.status(401).json({ error: 'Invalid token user' });
     }
@@ -128,6 +123,20 @@ function authMiddleware(req: AuthenticatedRequest, res: express.Response, next: 
     const reason = err instanceof Error ? err.message : 'Invalid token';
     return res.status(401).json({ error: reason });
   }
+};
+
+async function getUniqueSlug(base: string) {
+  let attempt = 0;
+  let slug = slugify(base);
+
+  while (attempt < 5) {
+    const existing = await prisma.user.findUnique({ where: { profileSlug: slug } });
+    if (!existing) return slug;
+    slug = `${slugify(base)}-${Math.random().toString(36).slice(2, 4)}`;
+    attempt += 1;
+  }
+
+  return `${slugify(base)}-${Date.now()}`;
 }
 
 function normalizeUrl(raw: string) {
@@ -232,7 +241,7 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', message: 'Backend is running' });
 });
 
-app.post('/auth/mock-login', (req, res) => {
+app.post('/auth/mock-login', async (req, res) => {
   const { email, fullName, tumId = null, faculty = null, semester = null } = req.body ?? {};
 
   if (!email || typeof email !== 'string') {
@@ -243,43 +252,63 @@ app.post('/auth/mock-login', (req, res) => {
   }
 
   const normalizedEmail = email.trim().toLowerCase();
-  let existing = users.find((u) => u.email === normalizedEmail);
   const normalizedSemester =
     semester === undefined || semester === null || semester === ''
       ? null
       : Number(semester);
 
-  if (!existing) {
-    existing = {
-      id: randomUUID(),
-      tumId: tumId ? String(tumId) : null,
-      email: normalizedEmail,
-      fullName: fullName.trim(),
-      faculty: faculty ? String(faculty) : null,
-      semester: Number.isNaN(normalizedSemester) ? null : normalizedSemester,
-      profileSlug: slugify(fullName),
-      authProvider: 'mock',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    users.push(existing);
-  } else {
-    existing.fullName = fullName.trim();
-    existing.tumId = tumId ? String(tumId) : null;
-    existing.faculty = faculty ? String(faculty) : null;
-    existing.semester = Number.isNaN(normalizedSemester) ? null : normalizedSemester;
-    existing.updatedAt = new Date();
-  }
+  try {
+    const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+    const parsedSemester = Number.isNaN(normalizedSemester) ? null : normalizedSemester;
 
-  const token = issueToken(existing);
-  return res.json({ token, user: sanitizeUser(existing) });
+    let user: User;
+    if (!existing) {
+      user = await prisma.user.create({
+        data: {
+          email: normalizedEmail,
+          fullName: fullName.trim(),
+          tumId: tumId ? String(tumId) : null,
+          faculty: faculty ? String(faculty) : null,
+          semester: parsedSemester,
+          profileSlug: await getUniqueSlug(fullName),
+          authProvider: 'mock',
+        },
+      });
+    } else {
+      user = await prisma.user.update({
+        where: { id: existing.id },
+        data: {
+          fullName: fullName.trim(),
+          tumId: tumId ? String(tumId) : null,
+          faculty: faculty ? String(faculty) : null,
+          semester: parsedSemester,
+        },
+      });
+    }
+
+    const token = issueToken(user);
+    return res.json({ token, user: sanitizeUser(user) });
+  } catch (err) {
+    console.error('mock-login failed', err);
+    return res.status(500).json({ error: 'Login failed' });
+  }
 });
 
-app.get('/me', authMiddleware, (req: AuthenticatedRequest, res) => {
+app.get('/me', authMiddleware, async (req: AuthenticatedRequest, res) => {
   if (!req.user) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  return res.json({ user: sanitizeUser(req.user) });
+
+  try {
+    const fresh = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (!fresh) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+    return res.json({ user: sanitizeUser(fresh) });
+  } catch (err) {
+    console.error('/me failed', err);
+    return res.status(500).json({ error: 'Failed to load profile' });
+  }
 });
 
 app.post('/api/scrape', async (req, res) => {
