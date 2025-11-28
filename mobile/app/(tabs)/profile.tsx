@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Modal,
   ScrollView,
   StyleSheet,
   TextInput,
@@ -11,9 +10,9 @@ import {
 import * as SecureStore from 'expo-secure-store';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
+import { useRouter } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemeToggle } from '@/components/theme-toggle';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -39,6 +38,7 @@ const activities = [
 ];
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,7 +48,6 @@ export default function ProfileScreen() {
   const [tumId, setTumId] = useState('');
   const [faculty, setFaculty] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const accent = useThemeColor({}, 'tint');
   const border = useThemeColor({}, 'border');
@@ -136,14 +135,6 @@ export default function ProfileScreen() {
     }
   };
 
-  const onLogout = async () => {
-    setToken(null);
-    setUser(null);
-    setAuthError(null);
-    setSettingsOpen(false);
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
-  };
-
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -220,7 +211,7 @@ export default function ProfileScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.headerRow}>
           <ThemedText type="title">Profile</ThemedText>
-          <TouchableOpacity onPress={() => setSettingsOpen(true)}>
+          <TouchableOpacity onPress={() => router.push('/settings')}>
             <ThemedText style={{ fontSize: 22 }}>⚙️</ThemedText>
           </TouchableOpacity>
         </View>
@@ -261,27 +252,6 @@ export default function ProfileScreen() {
           </View>
         </View>
       </ScrollView>
-
-      <Modal visible={settingsOpen} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { borderColor: border, backgroundColor: card }]}>
-            <ThemedText type="subtitle">Settings</ThemedText>
-            <View style={styles.modalRow}>
-              <ThemedText>Theme</ThemedText>
-              <ThemeToggle />
-            </View>
-            <TouchableOpacity style={[styles.modalButton, { borderColor: border }]} onPress={() => { fetchProfile(token); setSettingsOpen(false); }}>
-              <ThemedText>Refresh profile</ThemedText>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.modalButton, { borderColor: border }]} onPress={onLogout}>
-              <ThemedText style={{ color: '#b91c1c', fontWeight: '700' }}>Log out</ThemedText>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.modalButton, { borderColor: border }]} onPress={() => setSettingsOpen(false)}>
-              <ThemedText>Close</ThemedText>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -368,30 +338,5 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     gap: 8,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  modalCard: {
-    borderWidth: 1.5,
-    borderRadius: 14,
-    padding: 16,
-    width: '100%',
-    gap: 10,
-  },
-  modalButton: {
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 10,
-  },
-  modalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 4,
   },
 });
