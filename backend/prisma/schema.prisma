@@ -31,12 +31,23 @@ model User {
   updatedAt    DateTime     @updatedAt
   posts        Post[]
   comments     Comment[]
+  meetups      Meetup[]       @relation("MeetupHost")
+  memberships  MeetupMember[]
 }
 
 enum PostCategory {
   market
   qa
   discussion
+}
+
+enum MeetupCategory {
+  hike
+  bike
+  food
+  code
+  study
+  social
 }
 
 model Post {
@@ -59,4 +70,30 @@ model Comment {
   post      Post     @relation(fields: [postId], references: [id])
   postId    String
   createdAt DateTime @default(now())
+}
+
+model Meetup {
+  id           String          @id @default(uuid())
+  title        String
+  description  String
+  category     MeetupCategory
+  timeInfo     String
+  location     String
+  maxAttendees Int?
+  host         User            @relation("MeetupHost", fields: [hostId], references: [id])
+  hostId       String
+  members      MeetupMember[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+}
+
+model MeetupMember {
+  id        String   @id @default(uuid())
+  meetup    Meetup   @relation(fields: [meetupId], references: [id])
+  meetupId  String
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  createdAt DateTime @default(now())
+
+  @@unique([meetupId, userId])
 }

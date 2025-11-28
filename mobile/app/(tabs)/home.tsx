@@ -246,12 +246,6 @@ export default function HomeScreen() {
                         <Feather name="map-pin" size={12} color="#e2e8f0" />
                         <ThemedText style={{ color: '#e2e8f0', fontSize: 12 }}>{event.loc || 'TUM'}</ThemedText>
                       </View>
-                      <View style={styles.goingPill}>
-                        <ThemedText style={{ color: '#f8fafc', fontWeight: '700', fontSize: 12 }}>
-                          +{event.going || 120} going
-                        </ThemedText>
-                        <Feather name="chevron-right" size={12} color="#f8fafc" />
-                      </View>
                     </View>
                   </View>
                 </TouchableOpacity>

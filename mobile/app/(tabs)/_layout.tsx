@@ -24,6 +24,13 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="meetups"
+        options={{
+          title: 'Meetups',
+          tabBarIcon: ({ color }) => <Feather name="users" size={24} color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="forum"
         options={{
           title: 'Forum',

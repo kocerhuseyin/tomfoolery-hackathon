@@ -1,4 +1,4 @@
-import { PrismaClient, User, PostCategory } from '../prisma/generated/client';
+import { PrismaClient, User, PostCategory, MeetupCategory } from '../prisma/generated/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import axios from 'axios';
@@ -24,6 +24,7 @@ const prisma = new PrismaClient({ adapter });
 
 const allowedOrigins = FRONTEND_ORIGIN.split(',').map((origin) => origin.trim());
 const ALLOWED_CATEGORIES: PostCategory[] = ['market', 'qa', 'discussion'];
+const ALLOWED_MEETUPS: MeetupCategory[] = ['hike', 'bike', 'food', 'code', 'study', 'social'];
 
 app.use(cors({
   origin: allowedOrigins,
@@ -97,6 +98,22 @@ type ForumPostWithComments = ForumPost & {
       email: string;
     };
   }>;
+};
+
+type MeetupResponse = {
+  id: string;
+  title: string;
+  description: string;
+  category: MeetupCategory;
+  timeInfo: string;
+  location: string;
+  maxAttendees?: number | null;
+  host: {
+    id: string;
+    fullName: string;
+  };
+  memberCount: number;
+  joined: boolean;
 };
 
 function isHttpUrl(value: string) {
@@ -593,6 +610,151 @@ app.post('/forum/posts/:id/comments', authMiddleware, async (req: AuthenticatedR
   } catch (err) {
     console.error('Failed to create comment', err);
     return res.status(500).json({ error: 'Failed to create comment' });
+  }
+});
+
+app.get('/meetups', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  const category = typeof req.query.category === 'string' ? req.query.category : null;
+  const filterCategory =
+    category && ALLOWED_MEETUPS.includes(category as MeetupCategory) ? (category as MeetupCategory) : undefined;
+
+  try {
+    const meetups = await prisma.meetup.findMany({
+      where: filterCategory ? { category: filterCategory } : undefined,
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      include: {
+        host: true,
+        members: { select: { userId: true } },
+      },
+    });
+
+    const payload: MeetupResponse[] = meetups.map((m) => ({
+      id: m.id,
+      title: m.title,
+      description: m.description,
+      category: m.category,
+      timeInfo: m.timeInfo,
+      location: m.location,
+      maxAttendees: m.maxAttendees,
+      host: {
+        id: m.hostId,
+        fullName: m.host.fullName,
+      },
+      memberCount: m.members.length,
+      joined: m.members.some((mem) => mem.userId === req.user?.id),
+    }));
+
+    return res.json({ meetups: payload });
+  } catch (err) {
+    console.error('Failed to list meetups', err);
+    return res.status(500).json({ error: 'Failed to load meetups' });
+  }
+});
+
+app.post('/meetups', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  const { title, description, category, timeInfo, location, maxAttendees } = req.body ?? {};
+
+  if (!title || typeof title !== 'string' || title.trim().length < 3) {
+    return res.status(400).json({ error: 'Title must be at least 3 characters' });
+  }
+  if (!description || typeof description !== 'string' || description.trim().length < 3) {
+    return res.status(400).json({ error: 'Description must be at least 3 characters' });
+  }
+  if (!category || !ALLOWED_MEETUPS.includes(category)) {
+    return res.status(400).json({ error: 'Invalid category' });
+  }
+  if (!timeInfo || typeof timeInfo !== 'string') {
+    return res.status(400).json({ error: 'Time info is required' });
+  }
+  if (!location || typeof location !== 'string') {
+    return res.status(400).json({ error: 'Location is required' });
+  }
+
+  try {
+    const created = await prisma.meetup.create({
+      data: {
+        title: title.trim(),
+        description: description.trim(),
+        category,
+        timeInfo: timeInfo.trim(),
+        location: location.trim(),
+        maxAttendees: maxAttendees ?? null,
+        hostId: req.user.id,
+        members: {
+          create: { userId: req.user.id },
+        },
+      },
+      include: { host: true, members: { select: { userId: true } } },
+    });
+
+    const payload: MeetupResponse = {
+      id: created.id,
+      title: created.title,
+      description: created.description,
+      category: created.category,
+      timeInfo: created.timeInfo,
+      location: created.location,
+      maxAttendees: created.maxAttendees,
+      host: {
+        id: created.hostId,
+        fullName: created.host.fullName,
+      },
+      memberCount: created.members.length,
+      joined: true,
+    };
+
+    return res.status(201).json({ meetup: payload });
+  } catch (err) {
+    console.error('Failed to create meetup', err);
+    return res.status(500).json({ error: 'Failed to create meetup' });
+  }
+});
+
+app.post('/meetups/:id/join', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  const meetupId = req.params.id;
+  if (!meetupId) return res.status(400).json({ error: 'Missing meetup id' });
+
+  try {
+    const meetup = await prisma.meetup.findUnique({
+      where: { id: meetupId },
+      include: { members: true },
+    });
+    if (!meetup) return res.status(404).json({ error: 'Meetup not found' });
+
+    if (meetup.maxAttendees && meetup.members.length >= meetup.maxAttendees) {
+      return res.status(400).json({ error: 'Meetup is full' });
+    }
+
+    await prisma.meetupMember.upsert({
+      where: { meetupId_userId: { meetupId, userId: req.user.id } },
+      update: {},
+      create: { meetupId, userId: req.user.id },
+    });
+
+    return res.json({ status: 'joined' });
+  } catch (err) {
+    console.error('Failed to join meetup', err);
+    return res.status(500).json({ error: 'Failed to join meetup' });
+  }
+});
+
+app.post('/meetups/:id/leave', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  const meetupId = req.params.id;
+  if (!meetupId) return res.status(400).json({ error: 'Missing meetup id' });
+
+  try {
+    await prisma.meetupMember.deleteMany({
+      where: { meetupId, userId: req.user.id },
+    });
+    return res.json({ status: 'left' });
+  } catch (err) {
+    console.error('Failed to leave meetup', err);
+    return res.status(500).json({ error: 'Failed to leave meetup' });
   }
 });
 
