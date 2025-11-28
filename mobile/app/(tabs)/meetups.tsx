@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
 import { useRouter } from 'expo-router';
@@ -22,6 +22,7 @@ type Meetup = {
   maxAttendees?: number | null;
   memberCount: number;
   joined: boolean;
+  isHost: boolean;
 };
 
 export default function MeetupsScreen() {
@@ -38,6 +39,15 @@ export default function MeetupsScreen() {
   const [meetups, setMeetups] = useState<Meetup[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [category, setCategory] = useState<Meetup['category']>('hike');
+  const [timeInfo, setTimeInfo] = useState('');
+  const [location, setLocation] = useState('');
+  const [maxAttendees, setMaxAttendees] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -72,6 +82,57 @@ export default function MeetupsScreen() {
   useEffect(() => {
     fetchMeetups();
   }, [token]);
+
+  const resetForm = () => {
+    setTitle('');
+    setDescription('');
+    setTimeInfo('');
+    setLocation('');
+    setMaxAttendees('');
+    setCategory('hike');
+    setEditingId(null);
+  };
+
+  const onSave = async () => {
+    if (!token) return;
+    if (!title.trim() || !description.trim() || !timeInfo.trim() || !location.trim()) {
+      setError('Please fill in all fields.');
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const isEdit = Boolean(editingId);
+      const url = isEdit ? `${API_URL}/meetups/${editingId}` : `${API_URL}/meetups`;
+      const method = isEdit ? 'PUT' : 'POST';
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          title,
+          description,
+          category,
+          timeInfo,
+          location,
+          maxAttendees: maxAttendees ? Number(maxAttendees) : null,
+        }),
+      });
+      if (!response.ok) {
+        const txt = await response.text();
+        throw new Error(txt || `HTTP ${response.status}`);
+      }
+      setShowCreate(false);
+      resetForm();
+      fetchMeetups();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save meetup');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleJoin = async (id: string, joined: boolean) => {
     if (!token) return;
@@ -124,11 +185,91 @@ export default function MeetupsScreen() {
             <Feather name="users" size={20} color={accent} />
             <ThemedText type="title">Meetups</ThemedText>
           </View>
-          <TouchableOpacity style={[styles.createBtn, { backgroundColor: accent }]}>
+          <TouchableOpacity style={[styles.createBtn, { backgroundColor: accent }]} onPress={() => setShowCreate((prev) => !prev)}>
             <Feather name="plus" size={14} color="#f8fafc" />
-            <ThemedText style={{ color: '#f8fafc', fontWeight: '700', fontSize: 12 }}>Create</ThemedText>
+            <ThemedText style={{ color: '#f8fafc', fontWeight: '700', fontSize: 12 }}>
+              {showCreate ? 'Close' : editingId ? 'Edit' : 'Create'}
+            </ThemedText>
           </TouchableOpacity>
         </View>
+
+        {showCreate ? (
+          <View style={[styles.card, { borderColor: border }]}>
+            <ThemedText type="subtitle">Create a meetup</ThemedText>
+            <View style={styles.form}>
+              <View style={styles.rowSpread}>
+                {(['hike', 'bike', 'food', 'code', 'study', 'social'] as Meetup['category'][]).map((cat) => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[
+                      styles.chip,
+                      { backgroundColor: category === cat ? '#0f172a' : '#fff', borderColor: border },
+                    ]}
+                    onPress={() => setCategory(cat)}
+                  >
+                    <ThemedText style={{ color: category === cat ? '#fff' : '#475569', fontSize: 11, fontWeight: '700' }}>
+                      {cat}
+                    </ThemedText>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TextInput
+                style={[styles.textInput, { borderColor: border, color: text }]}
+                placeholder="Title"
+                placeholderTextColor={muted}
+                value={title}
+                onChangeText={setTitle}
+              />
+              <TextInput
+                style={[styles.textInput, { borderColor: border, color: text }]}
+                placeholder="Description"
+                placeholderTextColor={muted}
+                value={description}
+                onChangeText={setDescription}
+                multiline
+              />
+              <TextInput
+                style={[styles.textInput, { borderColor: border, color: text }]}
+                placeholder="Time (e.g., Sat, 16:00)"
+                placeholderTextColor={muted}
+                value={timeInfo}
+                onChangeText={setTimeInfo}
+              />
+              <TextInput
+                style={[styles.textInput, { borderColor: border, color: text }]}
+                placeholder="Location"
+                placeholderTextColor={muted}
+                value={location}
+                onChangeText={setLocation}
+              />
+              <TextInput
+                style={[styles.textInput, { borderColor: border, color: text }]}
+                placeholder="Max attendees (optional)"
+                placeholderTextColor={muted}
+                keyboardType="number-pad"
+                value={maxAttendees}
+                onChangeText={setMaxAttendees}
+              />
+              <TouchableOpacity
+                style={[styles.createBtn, { backgroundColor: accent, alignSelf: 'flex-start' }]}
+                onPress={onSave}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <ActivityIndicator color="#f8fafc" />
+                ) : (
+                  <>
+                    <Feather name="check" size={14} color="#f8fafc" />
+                    <ThemedText style={{ color: '#f8fafc', fontWeight: '700', fontSize: 12 }}>
+                      {editingId ? 'Update' : 'Save'}
+                    </ThemedText>
+                  </>
+                )}
+              </TouchableOpacity>
+              {error ? <ThemedText style={{ color: '#b91c1c' }}>Error: {error}</ThemedText> : null}
+            </View>
+          </View>
+        ) : null}
 
         <View style={{ gap: 12 }}>
           {meetups.map((meetup) => {
@@ -189,6 +330,24 @@ export default function MeetupsScreen() {
                       {isJoined ? 'Joined' : 'Join'}
                     </ThemedText>
                   </TouchableOpacity>
+                  {meetup.isHost ? (
+                    <TouchableOpacity
+                      style={[styles.createBtn, { backgroundColor: '#fef3c7', alignSelf: 'flex-start' }]}
+                      onPress={() => {
+                        setShowCreate(true);
+                        setEditingId(meetup.id);
+                        setTitle(meetup.title);
+                        setDescription(meetup.description);
+                        setTimeInfo(meetup.timeInfo);
+                        setLocation(meetup.location);
+                        setMaxAttendees(meetup.maxAttendees ? String(meetup.maxAttendees) : '');
+                        setCategory(meetup.category);
+                      }}
+                    >
+                      <Feather name="edit-2" size={14} color="#92400e" />
+                      <ThemedText style={{ color: '#92400e', fontWeight: '700', fontSize: 12 }}>Edit</ThemedText>
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
               </View>
             );
@@ -220,6 +379,14 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 10,
     alignItems: 'center',
+  },
+  form: {
+    gap: 10,
+  },
+  rowSpread: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
   },
   header: {
     flexDirection: 'row',
@@ -261,6 +428,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 12,
+    borderWidth: 1,
+  },
+  textInput: {
+    borderWidth: 1.2,
+    borderRadius: 10,
+    padding: 12,
   },
   descBox: {
     backgroundColor: '#f8fafc',

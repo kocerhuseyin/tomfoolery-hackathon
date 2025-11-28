@@ -114,6 +114,7 @@ type MeetupResponse = {
   };
   memberCount: number;
   joined: boolean;
+  isHost: boolean;
 };
 
 function isHttpUrl(value: string) {
@@ -644,6 +645,7 @@ app.get('/meetups', authMiddleware, async (req: AuthenticatedRequest, res) => {
       },
       memberCount: m.members.length,
       joined: m.members.some((mem) => mem.userId === req.user?.id),
+      isHost: m.hostId === req.user?.id,
     }));
 
     return res.json({ meetups: payload });
@@ -704,6 +706,7 @@ app.post('/meetups', authMiddleware, async (req: AuthenticatedRequest, res) => {
       },
       memberCount: created.members.length,
       joined: true,
+      isHost: true,
     };
 
     return res.status(201).json({ meetup: payload });
@@ -755,6 +758,55 @@ app.post('/meetups/:id/leave', authMiddleware, async (req: AuthenticatedRequest,
   } catch (err) {
     console.error('Failed to leave meetup', err);
     return res.status(500).json({ error: 'Failed to leave meetup' });
+  }
+});
+
+app.put('/meetups/:id', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  const meetupId = req.params.id;
+  const { title, description, category, timeInfo, location, maxAttendees } = req.body ?? {};
+
+  if (!meetupId) return res.status(400).json({ error: 'Missing meetup id' });
+  if (category && !ALLOWED_MEETUPS.includes(category)) {
+    return res.status(400).json({ error: 'Invalid category' });
+  }
+
+  try {
+    const meetup = await prisma.meetup.findUnique({ where: { id: meetupId } });
+    if (!meetup) return res.status(404).json({ error: 'Meetup not found' });
+    if (meetup.hostId !== req.user.id) return res.status(403).json({ error: 'Only host can edit' });
+
+    const updated = await prisma.meetup.update({
+      where: { id: meetupId },
+      data: {
+        title: title?.trim() || meetup.title,
+        description: description?.trim() || meetup.description,
+        category: category || meetup.category,
+        timeInfo: timeInfo?.trim() || meetup.timeInfo,
+        location: location?.trim() || meetup.location,
+        maxAttendees: maxAttendees ?? meetup.maxAttendees,
+      },
+      include: { host: true, members: { select: { userId: true } } },
+    });
+
+    const payload: MeetupResponse = {
+      id: updated.id,
+      title: updated.title,
+      description: updated.description,
+      category: updated.category,
+      timeInfo: updated.timeInfo,
+      location: updated.location,
+      maxAttendees: updated.maxAttendees,
+      host: { id: updated.hostId, fullName: updated.host.fullName },
+      memberCount: updated.members.length,
+      joined: true,
+      isHost: true,
+    };
+
+    return res.json({ meetup: payload });
+  } catch (err) {
+    console.error('Failed to update meetup', err);
+    return res.status(500).json({ error: 'Failed to update meetup' });
   }
 });
 
