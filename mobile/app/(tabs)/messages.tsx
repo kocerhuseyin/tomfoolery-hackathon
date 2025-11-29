@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
@@ -45,6 +45,7 @@ export default function MessagesScreen() {
   const [composed, setComposed] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
+  const messagesRef = useRef<ScrollView | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -122,12 +123,34 @@ export default function MessagesScreen() {
     }
   }, [token]);
 
-  const openChat = async (chat: ChatSummary) => {
-    setSelectedChat(chat);
-    setLoadingMessages(true);
-    setMessages([]);
+  useEffect(() => {
+    if (!token) return;
+    const chatInterval = setInterval(fetchChats, 5000);
+    return () => clearInterval(chatInterval);
+  }, [token]);
+
+  useEffect(() => {
+    if (!token || !selectedChat) return;
+    const chatId = selectedChat.id;
+    loadMessages(chatId, { silent: true });
+    const msgInterval = setInterval(() => loadMessages(chatId, { silent: true }), 4000);
+    return () => clearInterval(msgInterval);
+  }, [selectedChat, token]);
+
+  useEffect(() => {
+    if (messagesRef.current && selectedChat) {
+      setTimeout(() => messagesRef.current?.scrollToEnd({ animated: true }), 50);
+    }
+  }, [messages, selectedChat]);
+
+  const loadMessages = async (chatId: string, { silent }: { silent?: boolean } = {}) => {
+    if (!token) return;
+    if (!silent) {
+      setLoadingMessages(true);
+      setMessages([]);
+    }
     try {
-      const response = await fetch(`${API_URL}/chats/${chat.id}/messages`, {
+      const response = await fetch(`${API_URL}/chats/${chatId}/messages`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -136,8 +159,13 @@ export default function MessagesScreen() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load messages');
     } finally {
-      setLoadingMessages(false);
+      if (!silent) setLoadingMessages(false);
     }
+  };
+
+  const openChat = async (chat: ChatSummary) => {
+    setSelectedChat(chat);
+    await loadMessages(chat.id, { silent: false });
   };
 
   const startChat = async () => {
@@ -298,7 +326,12 @@ export default function MessagesScreen() {
             </ThemedText>
             <View style={{ width: 40 }} />
           </View>
-          <ScrollView contentContainerStyle={styles.messages} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            ref={messagesRef}
+            contentContainerStyle={styles.messages}
+            showsVerticalScrollIndicator={false}
+            onContentSizeChange={() => messagesRef.current?.scrollToEnd({ animated: true })}
+          >
             {loadingMessages ? (
               <View style={styles.loading}>
                 <ActivityIndicator color={accent} />
