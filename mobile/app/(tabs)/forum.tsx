@@ -142,10 +142,6 @@ export default function ForumScreen() {
                 Discuss, trade, and connect with peers.
               </ThemedText>
               <View style={styles.heroActions}>
-                <TouchableOpacity style={styles.searchBtn}>
-                  <Feather name="search" size={14} color="#4f46e5" />
-                  <ThemedText style={{ color: '#4f46e5', fontWeight: '700', fontSize: 12 }}>Search</ThemedText>
-                </TouchableOpacity>
                 <TouchableOpacity style={styles.newPostBtn} onPress={() => router.push('/forum/new')}>
                   <Feather name="message-square" size={14} color="#f8fafc" />
                   <ThemedText style={{ color: '#f8fafc', fontWeight: '700', fontSize: 12 }}>New Post</ThemedText>

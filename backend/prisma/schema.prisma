@@ -38,6 +38,8 @@ model User {
   comments     Comment[]
   meetups      Meetup[]       @relation("MeetupHost")
   memberships  MeetupMember[]
+  chatMembers  ChatMember[]
+  messages     Message[]
 }
 
 enum PostCategory {
@@ -101,4 +103,33 @@ model MeetupMember {
   createdAt DateTime @default(now())
 
   @@unique([meetupId, userId])
+}
+
+model Chat {
+  id        String        @id @default(uuid())
+  members   ChatMember[]
+  messages  Message[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model ChatMember {
+  id        String   @id @default(uuid())
+  chat      Chat     @relation(fields: [chatId], references: [id])
+  chatId    String
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  createdAt DateTime @default(now())
+
+  @@unique([chatId, userId])
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  body      String
+  chat      Chat     @relation(fields: [chatId], references: [id])
+  chatId    String
+  sender    User     @relation(fields: [senderId], references: [id])
+  senderId  String
+  createdAt DateTime @default(now())
 }

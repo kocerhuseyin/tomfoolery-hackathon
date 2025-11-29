@@ -109,6 +109,24 @@ type ForumPostWithComments = ForumPost & {
   }>;
 };
 
+type ChatSummary = {
+  id: string;
+  members: Array<{ id: string; fullName: string; email: string }>;
+  lastMessage?: {
+    id: string;
+    body: string;
+    createdAt: Date;
+    senderId: string;
+  };
+};
+
+type ChatMessage = {
+  id: string;
+  body: string;
+  createdAt: Date;
+  sender: { id: string; fullName: string; email: string };
+};
+
 type MeetupResponse = {
   id: string;
   title: string;
@@ -948,6 +966,199 @@ app.put('/meetups/:id', authMiddleware, async (req: AuthenticatedRequest, res) =
   } catch (err) {
     console.error('Failed to update meetup', err);
     return res.status(500).json({ error: 'Failed to update meetup' });
+  }
+});
+
+app.get('/students', authMiddleware, async (_req: AuthenticatedRequest, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      take: 200,
+      orderBy: { fullName: 'asc' },
+      select: { id: true, fullName: true, email: true, faculty: true },
+    });
+    return res.json({ users });
+  } catch (err) {
+    console.error('Failed to list students', err);
+    return res.status(500).json({ error: 'Failed to load students' });
+  }
+});
+
+app.get('/chats', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const chats = await prisma.chat.findMany({
+      where: { members: { some: { userId: req.user.id } } },
+      orderBy: { updatedAt: 'desc' },
+      include: {
+        members: { include: { user: true } },
+        messages: { orderBy: { createdAt: 'desc' }, take: 1 },
+      },
+    });
+
+    const payload: ChatSummary[] = chats.map((chat) => ({
+      id: chat.id,
+      members: chat.members.map((m) => ({
+        id: m.user.id,
+        fullName: m.user.fullName,
+        email: m.user.email,
+      })),
+      lastMessage: chat.messages[0]
+        ? {
+            id: chat.messages[0].id,
+            body: chat.messages[0].body,
+            createdAt: chat.messages[0].createdAt,
+            senderId: chat.messages[0].senderId,
+          }
+        : undefined,
+    }));
+
+    return res.json({ chats: payload });
+  } catch (err) {
+    console.error('Failed to list chats', err);
+    return res.status(500).json({ error: 'Failed to load chats' });
+  }
+});
+
+app.post('/chats', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  const { participantId } = req.body ?? {};
+  if (!participantId || typeof participantId !== 'string') {
+    return res.status(400).json({ error: 'participantId is required' });
+  }
+
+  if (participantId === req.user.id) {
+    return res.status(400).json({ error: 'Cannot start chat with yourself' });
+  }
+
+  try {
+    const participant = await prisma.user.findUnique({ where: { id: participantId } });
+    if (!participant) return res.status(404).json({ error: 'User not found' });
+
+    const existing = await prisma.chat.findFirst({
+      where: {
+        AND: [
+          { members: { some: { userId: req.user.id } } },
+          { members: { some: { userId: participantId } } },
+        ],
+      },
+      include: { members: { include: { user: true } } },
+    });
+
+    if (existing) {
+      return res.json({
+        chat: {
+          id: existing.id,
+          members: existing.members.map((m) => ({
+            id: m.user.id,
+            fullName: m.user.fullName,
+            email: m.user.email,
+          })),
+        },
+      });
+    }
+
+    const created = await prisma.chat.create({
+      data: {
+        members: {
+          create: [
+            { userId: req.user.id },
+            { userId: participantId },
+          ],
+        },
+      },
+      include: { members: { include: { user: true } } },
+    });
+
+    return res.status(201).json({
+      chat: {
+        id: created.id,
+        members: created.members.map((m) => ({
+          id: m.user.id,
+          fullName: m.user.fullName,
+          email: m.user.email,
+        })),
+      },
+    });
+  } catch (err) {
+    console.error('Failed to create chat', err);
+    return res.status(500).json({ error: 'Failed to create chat' });
+  }
+});
+
+app.get('/chats/:id/messages', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  const chatId = req.params.id;
+  if (!chatId) return res.status(400).json({ error: 'Missing chat id' });
+
+  try {
+    const isMember = await prisma.chatMember.findFirst({
+      where: { chatId, userId: req.user.id },
+    });
+    if (!isMember) return res.status(403).json({ error: 'Forbidden' });
+
+    const messages = await prisma.message.findMany({
+      where: { chatId },
+      orderBy: { createdAt: 'asc' },
+      include: { sender: true },
+    });
+
+    const payload: ChatMessage[] = messages.map((m) => ({
+      id: m.id,
+      body: m.body,
+      createdAt: m.createdAt,
+      sender: {
+        id: m.senderId,
+        fullName: m.sender.fullName,
+        email: m.sender.email,
+      },
+    }));
+
+    return res.json({ messages: payload });
+  } catch (err) {
+    console.error('Failed to load messages', err);
+    return res.status(500).json({ error: 'Failed to load messages' });
+  }
+});
+
+app.post('/chats/:id/messages', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  const chatId = req.params.id;
+  const { body } = req.body ?? {};
+  if (!chatId) return res.status(400).json({ error: 'Missing chat id' });
+  if (!body || typeof body !== 'string' || body.trim().length === 0) {
+    return res.status(400).json({ error: 'Message body is required' });
+  }
+
+  try {
+    const isMember = await prisma.chatMember.findFirst({
+      where: { chatId, userId: req.user.id },
+    });
+    if (!isMember) return res.status(403).json({ error: 'Forbidden' });
+
+    const created = await prisma.message.create({
+      data: {
+        chatId,
+        senderId: req.user.id,
+        body: body.trim(),
+      },
+    });
+
+    await prisma.chat.update({
+      where: { id: chatId },
+      data: { updatedAt: new Date() },
+    });
+
+    return res.status(201).json({
+      message: {
+        id: created.id,
+        body: created.body,
+        createdAt: created.createdAt,
+        senderId: created.senderId,
+      },
+    });
+  } catch (err) {
+    console.error('Failed to send message', err);
+    return res.status(500).json({ error: 'Failed to send message' });
   }
 });
 
