@@ -30,16 +30,17 @@ type TumEvent = {
   going?: number;
 };
 
+type MensaItem = {
+  name: string;
+  side?: string;
+  price?: string;
+  type?: 'meat' | 'vegan' | 'veg' | 'fish' | 'other';
+};
+
 const STORIES = [
   { id: 'campus', user: 'Campus Daily', img: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=300&q=80', live: true },
   { id: 'club', user: 'Hacker Club', img: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=300&q=80', live: true },
   { id: 'sports', user: 'Sports Team', img: 'https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=300&q=80', live: false },
-];
-
-const MENSA_ITEMS = [
-  { name: 'Wiener Schnitzel', side: 'with Fries & Salad', price: '4.50€', type: 'meat', img: 'https://images.unsplash.com/photo-1599921841143-819065a55cc6?w=400&q=80' },
-  { name: 'Vegan Thai Curry', side: 'with Basmati Rice', price: '3.20€', type: 'vegan', img: 'https://images.unsplash.com/photo-1565557623262-b51c2513a641?w=400&q=80' },
-  { name: 'Spaghetti Bolognese', side: 'Classic Beef Sauce', price: '3.80€', type: 'meat', img: 'https://images.unsplash.com/photo-1622973536968-3ead9e780960?w=400&q=80' },
 ];
 
 const FALLBACK_EVENTS: TumEvent[] = [
@@ -99,6 +100,10 @@ export default function HomeScreen() {
   const [events, setEvents] = useState<TumEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [currentBanner, setCurrentBanner] = useState(0);
+  const [menuDate, setMenuDate] = useState(
+    new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'short' }).format(new Date()),
+  );
+  const [mensaItems, setMensaItems] = useState<MensaItem[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -110,6 +115,24 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (!hasToken) return;
+    const fetchMensa = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/mensa`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = (await response.json()) as { items: MensaItem[]; date?: string };
+        setMensaItems(data.items || []);
+        if (data.date) {
+          setMenuDate(
+            new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'short' }).format(
+              new Date(data.date),
+            ),
+          );
+        }
+      } catch {
+        setMensaItems([]);
+      }
+    };
+
     const fetchEvents = async () => {
       setLoadingEvents(true);
       setError(null);
@@ -134,6 +157,7 @@ export default function HomeScreen() {
       }
     };
     fetchEvents();
+    fetchMensa();
   }, [hasToken]);
 
   const eventsToShow = useMemo(() => {
@@ -279,13 +303,12 @@ export default function HomeScreen() {
               Mensa Menu 🍽️
             </ThemedText>
             <View style={styles.openPill}>
-              <ThemedText style={{ color: '#16a34a', fontWeight: '700', fontSize: 12 }}>Open Now</ThemedText>
+              <ThemedText style={{ color: '#0f172a', fontWeight: '700', fontSize: 12 }}>{menuDate}</ThemedText>
             </View>
           </View>
           <View style={{ gap: 10 }}>
-            {MENSA_ITEMS.map((item, i) => (
+            {(mensaItems.length ? mensaItems : []).map((item, i) => (
               <View key={i} style={[styles.mensaCard, { borderColor: border }]}>
-                <Image source={{ uri: item.img }} style={styles.mensaImage} contentFit="cover" />
                 <View style={{ flex: 1, gap: 4 }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                     <ThemedText style={{ fontWeight: '700' }}>{item.name}</ThemedText>

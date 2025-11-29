@@ -14,6 +14,7 @@ const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:5173';
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-super-secret-change-me';
 const DATABASE_URL = process.env.DATABASE_URL;
 const USER_AGENT = 'TomfooleryCrawler/1.0 (+https://example.com)';
+const MENSA_URL = process.env.MENSA_URL || 'https://tum-confluence-mensa-placeholder.example'; // replace with real source when available
 if (!DATABASE_URL) {
   throw new Error('DATABASE_URL is required for Prisma');
 }
@@ -71,6 +72,13 @@ type TumEvent = {
   date?: string;
   url?: string;
   image?: string;
+};
+
+type MensaItem = {
+  name: string;
+  side?: string;
+  price?: string;
+  type?: 'meat' | 'vegan' | 'veg' | 'fish' | 'other';
 };
 
 type ForumPost = {
@@ -133,6 +141,59 @@ function toAbsoluteUrl(href: string | undefined, base: string) {
     return new URL(href, base).toString();
   } catch {
     return undefined;
+  }
+}
+
+async function scrapeMensaMenu() {
+  const fallback = {
+    date: new Date().toISOString().slice(0, 10),
+    items: [
+      { name: 'Wiener Schnitzel', side: 'with Fries & Salad', price: '4.50€', type: 'meat' },
+      { name: 'Vegan Thai Curry', side: 'with Basmati Rice', price: '3.20€', type: 'vegan' },
+      { name: 'Spaghetti Bolognese', side: 'Classic Beef Sauce', price: '3.80€', type: 'meat' },
+    ] satisfies MensaItem[],
+    source: 'fallback',
+    stale: true,
+  };
+
+  if (!MENSA_URL.startsWith('http')) return fallback;
+
+  try {
+    const response = await axios.get(MENSA_URL, {
+      headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,application/xhtml+xml' },
+      timeout: 8000,
+    });
+    const $ = load(response.data);
+    const items: MensaItem[] = [];
+    let date = new Date().toISOString().slice(0, 10);
+
+    $('time').first().each((_, el) => {
+      const d = $(el).attr('datetime') || $(el).text().trim();
+      if (d) date = d;
+    });
+
+    $('.menu-item, li, .dish')
+      .slice(0, 8)
+      .each((_, el) => {
+        const title = $(el).find('.title').text().trim() || $(el).find('strong').first().text().trim() || $(el).text().trim();
+        if (!title) return;
+        const side = $(el).find('.description, .side').text().trim() || undefined;
+        const price = $(el).find('.price').text().trim() || undefined;
+        const type = $(el).attr('data-type') as MensaItem['type'];
+        items.push({ name: title, side, price, type });
+      });
+
+    if (!items.length) return fallback;
+
+    return {
+      date,
+      items,
+      source: MENSA_URL,
+      stale: false,
+    };
+  } catch (err) {
+    console.error('Failed to scrape mensa', err);
+    return fallback;
   }
 }
 
@@ -303,6 +364,11 @@ app.get('/', (_req, res) => {
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', message: 'Backend is running' });
+});
+
+app.get('/api/mensa', async (_req, res) => {
+  const data = await scrapeMensaMenu();
+  return res.json(data);
 });
 
 app.get('/api/tum-events', async (_req, res) => {
