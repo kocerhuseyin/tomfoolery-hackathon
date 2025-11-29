@@ -251,18 +251,6 @@ export default function ProfileScreen() {
           </View>
         </LinearGradient>
 
-        <View style={[styles.statsCard, { borderColor: border, backgroundColor: '#fff' }]}>
-          <View style={{ gap: 2 }}>
-            <ThemedText style={{ fontSize: 12, color: '#94a3b8', fontWeight: '700', textTransform: 'uppercase' }}>
-              Campus Points
-            </ThemedText>
-            <ThemedText style={{ fontSize: 24, fontWeight: '900', color: '#4f46e5' }}>1,250 XP</ThemedText>
-          </View>
-          <View style={styles.trophy}>
-            <ThemedText style={{ fontSize: 20 }}>🏆</ThemedText>
-          </View>
-        </View>
-
         <View style={[styles.card, { borderColor: border, backgroundColor: card }]}>
           <View style={styles.sectionHeader}>
             <ThemedText type="subtitle">Recent activity</ThemedText>
@@ -352,27 +340,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 10,
     gap: 4,
-  },
-  statsCard: {
-    borderWidth: 1.5,
-    borderRadius: 16,
-    padding: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  trophy: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#eef2ff',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   form: {
     gap: 10,
