@@ -145,8 +145,16 @@ function toAbsoluteUrl(href: string | undefined, base: string) {
 }
 
 async function scrapeMensaMenu() {
+  const nextWeekdayIso = () => {
+    const d = new Date();
+    while (d.getDay() === 0 || d.getDay() === 6) {
+      d.setDate(d.getDate() + 1);
+    }
+    return d.toISOString().slice(0, 10);
+  };
+
   const fallback = {
-    date: new Date().toISOString().slice(0, 10),
+    date: nextWeekdayIso(),
     items: [
       { name: 'Wiener Schnitzel', side: 'with Fries & Salad', price: '4.50€', type: 'meat' },
       { name: 'Vegan Thai Curry', side: 'with Basmati Rice', price: '3.20€', type: 'vegan' },
