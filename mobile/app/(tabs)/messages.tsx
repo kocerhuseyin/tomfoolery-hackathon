@@ -1,5 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
 import { Feather } from '@expo/vector-icons';
@@ -315,53 +324,60 @@ export default function MessagesScreen() {
           {error ? <ThemedText style={{ color: '#b91c1c' }}>Error: {error}</ThemedText> : null}
         </ScrollView>
       ) : (
-        <View style={[styles.chatDetail, { backgroundColor: '#efeae2' }]}>
-          <View style={[styles.detailHeader, { borderColor: border }]}>
-            <TouchableOpacity onPress={() => setSelectedChat(null)} style={styles.backBtn}>
-              <Feather name="arrow-left" size={18} color={accent} />
-              <ThemedText style={{ color: accent }}>Back</ThemedText>
-            </TouchableOpacity>
-            <ThemedText style={{ fontWeight: '700' }} numberOfLines={1}>
-              {chatTitle}
-            </ThemedText>
-            <View style={{ width: 40 }} />
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
+        >
+          <View style={[styles.chatDetail, { backgroundColor: '#efeae2' }]}>
+            <View style={[styles.detailHeader, { borderColor: border }]}>
+              <TouchableOpacity onPress={() => setSelectedChat(null)} style={styles.backBtn}>
+                <Feather name="arrow-left" size={18} color={accent} />
+                <ThemedText style={{ color: accent }}>Back</ThemedText>
+              </TouchableOpacity>
+              <ThemedText style={{ fontWeight: '700' }} numberOfLines={1}>
+                {chatTitle}
+              </ThemedText>
+              <View style={{ width: 40 }} />
+            </View>
+            <ScrollView
+              ref={messagesRef}
+              contentContainerStyle={styles.messages}
+              showsVerticalScrollIndicator={false}
+              onContentSizeChange={() => messagesRef.current?.scrollToEnd({ animated: true })}
+              keyboardShouldPersistTaps="handled"
+            >
+              {loadingMessages ? (
+                <View style={styles.loading}>
+                  <ActivityIndicator color={accent} />
+                  <ThemedText style={{ color: muted }}>Loading…</ThemedText>
+                </View>
+              ) : (
+                messages.map((m) => {
+                  const isMe = currentUserId ? m.sender.id === currentUserId : false;
+                  return (
+                    <View key={m.id} style={isMe ? styles.outgoing : styles.incoming}>
+                      <ThemedText>{m.body}</ThemedText>
+                      <ThemedText style={styles.msgTime}>{relativeTime(m.createdAt)}</ThemedText>
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
+            <View style={[styles.inputRow, { borderColor: border }]}>
+              <TextInput
+                style={[styles.input, { color: text }]}
+                placeholder="Message..."
+                placeholderTextColor={muted}
+                value={composed}
+                onChangeText={setComposed}
+              />
+              <TouchableOpacity style={styles.iconBtn} onPress={sendMessage} disabled={sending || !composed.trim()}>
+                {sending ? <ActivityIndicator color={accent} /> : <Feather name="send" size={18} color={accent} />}
+              </TouchableOpacity>
+            </View>
           </View>
-          <ScrollView
-            ref={messagesRef}
-            contentContainerStyle={styles.messages}
-            showsVerticalScrollIndicator={false}
-            onContentSizeChange={() => messagesRef.current?.scrollToEnd({ animated: true })}
-          >
-            {loadingMessages ? (
-              <View style={styles.loading}>
-                <ActivityIndicator color={accent} />
-                <ThemedText style={{ color: muted }}>Loading…</ThemedText>
-              </View>
-            ) : (
-              messages.map((m) => {
-                const isMe = currentUserId ? m.sender.id === currentUserId : false;
-                return (
-                  <View key={m.id} style={isMe ? styles.outgoing : styles.incoming}>
-                    <ThemedText>{m.body}</ThemedText>
-                    <ThemedText style={styles.msgTime}>{relativeTime(m.createdAt)}</ThemedText>
-                  </View>
-                );
-              })
-            )}
-          </ScrollView>
-          <View style={[styles.inputRow, { borderColor: border }]}>
-            <TextInput
-              style={[styles.input, { color: text }]}
-              placeholder="Message..."
-              placeholderTextColor={muted}
-              value={composed}
-              onChangeText={setComposed}
-            />
-            <TouchableOpacity style={styles.iconBtn} onPress={sendMessage} disabled={sending || !composed.trim()}>
-              {sending ? <ActivityIndicator color={accent} /> : <Feather name="send" size={18} color={accent} />}
-            </TouchableOpacity>
-          </View>
-        </View>
+        </KeyboardAvoidingView>
       )}
     </SafeAreaView>
   );
