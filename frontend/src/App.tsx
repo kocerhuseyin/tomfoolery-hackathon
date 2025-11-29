@@ -283,7 +283,7 @@ function Layout({ children }: { children: ReactNode }) {
     <div className="page">
       <header className="top">
         <div className="brand" onClick={() => navigate(user ? '/app/home' : '/login')}>
-          <div className="logo">TUM Social</div>
+          <div className="logo">insideTUM</div>
           <div className="pill small">Prototype</div>
         </div>
         <div className="top-actions">
